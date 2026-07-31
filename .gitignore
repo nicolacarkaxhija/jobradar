@@ -9,5 +9,7 @@ venv/
 # local runs — real state lives in the private data repo
 data/
 archive/
+drafts/
+private/
 config.yaml
 .env

@@ -65,6 +65,35 @@ def test_digest_selection_and_marking() -> None:
         assert store.pending_digest(min_score=50) == []
 
 
+def test_draft_path_roundtrip() -> None:
+    with Store(":memory:") as store:
+        item = listing("Drafted")
+        store.add(item, status="pushed", verdict=verdict(95), draft_path="drafts/x.md")
+        pending = store.pending_digest(min_score=50)
+        assert pending[0].draft_path == "drafts/x.md"
+
+
+def test_migration_adds_draft_path_to_old_schema(tmp_path) -> None:
+    import sqlite3
+
+    db = tmp_path / "old.db"
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "CREATE TABLE listings (id TEXT PRIMARY KEY, source TEXT NOT NULL,"
+        " title TEXT NOT NULL, company TEXT NOT NULL, location TEXT NOT NULL,"
+        " url TEXT NOT NULL, dedupe_key TEXT NOT NULL, posted_at TEXT NOT NULL,"
+        " first_seen TEXT NOT NULL, score INTEGER, tier INTEGER, category TEXT,"
+        " reason TEXT, extracted TEXT, status TEXT NOT NULL, dup_of TEXT)"
+    )
+    conn.commit()
+    conn.close()
+
+    with Store(db) as store:  # opening migrates in place
+        item = listing("Migrated")
+        store.add(item, status="new", verdict=verdict(60), draft_path=None)
+        assert store.pending_digest(min_score=50)[0].draft_path is None
+
+
 def test_source_run_quota() -> None:
     with Store(":memory:") as store:
         assert store.runs_today("remotive") == 0
