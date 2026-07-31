@@ -3,8 +3,14 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
+from pathlib import Path
+from typing import cast
 
+from jobradar.config import JobRadarConfig
+from jobradar.models import APP_STATUSES, AppStatus
 from jobradar.pipeline import run
+from jobradar.store import Store
+from jobradar.tracking import render_tracking
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -19,7 +25,8 @@ def main(argv: list[str] | None = None) -> int:
     run_parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="in-memory DB, no notifications — for local testing",
+        help="in-memory DB, no notifications, read-only sources, no paid scoring "
+        "unless --score-limit is given",
     )
     run_parser.add_argument(
         "--source",
@@ -31,9 +38,18 @@ def main(argv: list[str] | None = None) -> int:
     run_parser.add_argument(
         "--score-limit", type=int, default=None, help="cap LLM-scored listings this run"
     )
-    args = parser.parse_args(argv)
 
+    track_parser = subparsers.add_parser("track", help="record application progress")
+    track_parser.add_argument("term", help="listing URL, or an id prefix of at least 8 chars")
+    track_parser.add_argument("status", choices=list(APP_STATUSES))
+    track_parser.add_argument("--note", default="", help="optional note (interviewer, date, ...)")
+    track_parser.add_argument("--config", default="config.yaml", help="path to config.yaml")
+
+    args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+
+    if args.command == "track":
+        return _track(args)
 
     stats = run(
         config_path=args.config,
@@ -43,7 +59,21 @@ def main(argv: list[str] | None = None) -> int:
         score_limit=args.score_limit,
     )
     print(stats.summary())
-    return 1 if stats.source_errors and stats.fetched == 0 else 0
+    # any persistently failing source must turn the scheduled workflow red
+    return 1 if stats.source_errors else 0
+
+
+def _track(args: argparse.Namespace) -> int:
+    cfg = JobRadarConfig.load(args.config)
+    with Store(cfg.storage.db_path) as store:
+        item = store.track(args.term, cast(AppStatus, args.status), args.note)
+        if item is None:
+            print(f"no listing matches {args.term!r} (use the URL or an id prefix >= 8 chars)")
+            return 2
+        tracked = store.tracked()
+    Path(cfg.storage.tracking_path).write_text(render_tracking(tracked), encoding="utf-8")
+    print(f"{item.title} @ {item.company} -> {item.app_status}")
+    return 0
 
 
 if __name__ == "__main__":
