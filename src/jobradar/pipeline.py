@@ -70,6 +70,8 @@ def run(
         telegram.enabled = False
         email.enabled = False
         drafts.available = False
+        if score_limit is None:
+            score_limit = 0  # no unbounded paid scoring against an in-memory DB
 
     runtime = _Runtime(
         cfg=cfg,
@@ -84,6 +86,7 @@ def run(
 
     with store:
         for source in build_sources(cfg, only=only):
+            source.read_only = dry_run  # e.g. don't mark alert emails \Seen from a dry run
             quota = source.max_runs_per_day
             if quota is not None and store.runs_today(source.name) >= quota:
                 logger.info("%s: daily quota (%d) reached, skipping", source.name, quota)
@@ -108,14 +111,29 @@ def run(
         if digest:
             items = store.pending_digest(cfg.scoring.digest_min)
             if items:
+                delivered = False
+                failed = False
                 if telegram.enabled:
-                    telegram.digest(items)
+                    ok = telegram.digest(items)
+                    delivered |= ok
+                    failed |= not ok
                 if email.enabled:
-                    email.digest(items)
+                    ok = email.digest(items)
+                    delivered |= ok
+                    failed |= not ok
                 if archive.enabled and not dry_run:
                     archive.write(items)
-                store.mark_digested([item.id for item in items])
-                stats.digested = len(items)
+                    delivered = delivered or not (telegram.enabled or email.enabled)
+                # only consume the queue when every enabled channel actually delivered;
+                # a failed channel leaves items pending so the next digest retries them
+                if delivered and not failed:
+                    store.mark_digested([item.id for item in items])
+                    stats.digested = len(items)
+                else:
+                    logger.error(
+                        "digest delivery incomplete — leaving %d item(s) pending for retry",
+                        len(items),
+                    )
 
     logger.info("run complete: %s", stats.summary())
     return stats
@@ -147,18 +165,26 @@ def _process(listing: Listing, rt: _Runtime) -> None:
         return
 
     verdict: Verdict | None = None
-    if rt.scorer.available and (rt.score_limit is None or rt.stats.scored < rt.score_limit):
+    if rt.scorer.available:
+        # A listing eligible for scoring is only persisted WITH a verdict. Stored
+        # unscored it would be undeliverable forever (store.has short-circuits and
+        # pending_digest needs a score) — so on failure or deferral, leave it
+        # unseen and let the next scheduled run retry.
+        if rt.score_limit is not None and rt.stats.scored >= rt.score_limit:
+            return
         verdict = rt.scorer.score(listing)
-        if verdict is not None:
-            rt.stats.scored += 1
-            logger.info(
-                "scored %d [%s] %s @ %s — %s",
-                verdict.score,
-                verdict.category,
-                listing.title,
-                listing.company,
-                verdict.reason,
-            )
+        if verdict is None:
+            logger.warning("no verdict for %s — left unseen to retry next run", listing.url)
+            return
+        rt.stats.scored += 1
+        logger.info(
+            "scored %d [%s] %s @ %s — %s",
+            verdict.score,
+            verdict.category,
+            listing.title,
+            listing.company,
+            verdict.reason,
+        )
 
     pushed = verdict is not None and verdict.score >= rt.cfg.scoring.push_threshold
     draft_path: str | None = None

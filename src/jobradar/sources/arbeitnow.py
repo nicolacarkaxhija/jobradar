@@ -19,7 +19,15 @@ class Arbeitnow(Source):
         self._cfg = cfg
 
     def fetch(self) -> list[Listing]:
+        from datetime import UTC, datetime
+
         from jobradar.sources.base import html_to_text
+
+        def posted(value: object) -> str:
+            # arbeitnow sends created_at as a unix epoch int
+            if isinstance(value, int):
+                return datetime.fromtimestamp(value, UTC).strftime("%Y-%m-%d")
+            return str(value or "")
 
         listings: list[Listing] = []
         for page in range(1, self._cfg.pages + 1):
@@ -36,7 +44,7 @@ class Arbeitnow(Source):
                         location=str(item.get("location", "")),
                         url=str(item.get("url", "")),
                         description=html_to_text(str(item.get("description", ""))),
-                        posted_at=str(item.get("created_at", "")),
+                        posted_at=posted(item.get("created_at")),
                     )
                 )
         return listings

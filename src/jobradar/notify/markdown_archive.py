@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from jobradar.config import MarkdownArchiveConfig, StorageConfig
+from jobradar.mdutil import md_escape, md_url
 from jobradar.store import StoredListing
 
 
@@ -21,10 +22,13 @@ class MarkdownArchive:
         path = self._dir / f"{now:%Y-%m-%d}.md"
         lines = [f"## Digest {now:%Y-%m-%d %H:%M} UTC", ""]
         for item in items:
-            comp = f" · {item.reason}" if item.reason else ""
+            # every field is untrusted (public internet / LLM output) and lands in a
+            # GitHub-rendered file — escape so nothing breaks out of the link syntax
+            comp = f" · {md_escape(item.reason)}" if item.reason else ""
             lines.append(
-                f"- **{item.score}** [{item.title} — {item.company}]({item.url})"
-                f" · {item.location} · `{item.source}`{comp}"
+                f"- **{item.score}** [{md_escape(item.title)} — {md_escape(item.company)}]"
+                f"({md_url(item.url)})"
+                f" · {md_escape(item.location)} · `{item.source.replace('`', '')}`{comp}"
             )
         lines.append("")
         with open(path, "a", encoding="utf-8") as fh:

@@ -26,13 +26,17 @@ class Jooble(Source):
             raise RuntimeError("JOOBLE_API_KEY not set")
         listings: list[Listing] = []
         for query in self._cfg.queries:
-            response = requests.post(
-                _API.format(key=self._key),
-                json={"keywords": query, "location": self._cfg.location},
-                headers={"User-Agent": USER_AGENT},
-                timeout=30,
-            )
-            response.raise_for_status()
+            try:
+                response = requests.post(
+                    _API.format(key=self._key),
+                    json={"keywords": query, "location": self._cfg.location},
+                    headers={"User-Agent": USER_AGENT},
+                    timeout=30,
+                )
+                response.raise_for_status()
+            except requests.RequestException as exc:
+                # the key sits in the URL path; keep it out of logs and tracebacks
+                raise RuntimeError(str(exc).replace(self._key, "***")) from None
             for job in response.json().get("jobs", []):
                 description = html_to_text(str(job.get("snippet", "")))
                 salary = str(job.get("salary", "") or "")

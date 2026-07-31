@@ -1,12 +1,15 @@
 # Copy to .github/workflows/jobradar.yml in your PRIVATE data repo.
 #
-# Schedule (UTC): six polls across CET waking hours; the 18:00 UTC run
-# (19:00/20:00 CET) also sends the daily digest.
+# Schedule (UTC): six polls across CET waking hours. The digest is gated on
+# WHICH cron fired (github.event.schedule), not the runner's wall clock —
+# GitHub routinely starts scheduled runs late, and a delayed 18:00 run must
+# still send the day's digest.
 name: jobradar
 
 on:
   schedule:
-    - cron: "0 4,7,10,13,15,18 * * *"
+    - cron: "0 4,7,10,13,15 * * *"
+    - cron: "0 18 * * *" # digest run (19:00/20:00 CET)
   workflow_dispatch:
     inputs:
       digest:
@@ -56,15 +59,22 @@ jobs:
           DIGEST_EMAIL_TO: ${{ secrets.DIGEST_EMAIL_TO }}
         run: |
           DIGEST=""
-          if [ "$(date -u +%H)" = "18" ] || [ "${{ inputs.digest }}" = "true" ]; then
+          if [ "${{ github.event.schedule }}" = "0 18 * * *" ] || [ "${{ inputs.digest }}" = "true" ]; then
             DIGEST="--digest"
           fi
           jobradar run --config config.yaml $DIGEST
 
       - name: Commit state
+        if: always() # listings fetched from healthy sources are kept even when a source failed
         run: |
           git config user.name "jobradar-bot"
           git config user.email "actions@users.noreply.github.com"
-          git add data/ archive/ drafts/ 2>/dev/null || git add data/ archive/
-          git diff --cached --quiet || git commit -m "chore: run $(date -u +'%Y-%m-%d %H:%M')"
-          git push
+          for d in data archive drafts; do
+            [ -d "$d" ] && git add "$d"
+          done
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: run $(date -u +'%Y-%m-%d %H:%M')"
+            # the repo may have advanced mid-run (e.g. the track workflow) — rebase, then push
+            git pull --rebase --autostash origin "${GITHUB_REF_NAME}"
+            git push
+          fi

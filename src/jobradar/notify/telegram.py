@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 
 _API = "https://api.telegram.org/bot{token}/sendMessage"
 _MESSAGE_LIMIT = 3500  # Telegram caps at 4096; leave headroom for tags
+_LINE_LIMIT = 3000  # one pathological line (kilometric tracking URL) must not sink a chunk
 
 
 class Telegram:
@@ -26,7 +27,7 @@ class Telegram:
         if cfg.enabled and not self.enabled:
             logger.warning("telegram enabled in config but TELEGRAM_BOT_TOKEN/CHAT_ID missing")
 
-    def push(self, listing: Listing, verdict: Verdict, draft_path: str | None = None) -> None:
+    def push(self, listing: Listing, verdict: Verdict, draft_path: str | None = None) -> bool:
         comp = verdict.extracted.comp
         lines = [
             f"<b>{verdict.score} · {html.escape(listing.title)}</b>",
@@ -38,39 +39,49 @@ class Telegram:
         if draft_path:
             lines.append(f"📝 draft ready: {html.escape(draft_path)}")
         lines.append(html.escape(listing.url))
-        self._send("\n".join(lines))
+        return self._send("\n".join(lines))
 
-    def digest(self, items: list[StoredListing]) -> None:
+    def digest(self, items: list[StoredListing]) -> bool:
         header = f"<b>jobradar digest — {len(items)} match(es)</b>"
         lines: list[str] = []
         for item in items:
             marker = "⚡ " if item.status == "pushed" else ""
             draft = f"\n    📝 {html.escape(item.draft_path)}" if item.draft_path else ""
-            lines.append(
+            line = (
                 f"{marker}<b>{item.score}</b> · "
                 f'<a href="{html.escape(item.url, quote=True)}">{html.escape(item.title)}</a>'
                 f" · {html.escape(item.company)} · {html.escape(item.location)}\n"
                 f"    {html.escape(item.reason or '')}{draft}"
             )
+            lines.append(line[:_LINE_LIMIT])
+
+        delivered = True
         chunk = header
         for line in lines:
             if len(chunk) + len(line) + 2 > _MESSAGE_LIMIT:
-                self._send(chunk)
+                delivered = self._send(chunk) and delivered
                 chunk = line
             else:
                 chunk = f"{chunk}\n\n{line}"
-        self._send(chunk)
+        return self._send(chunk) and delivered
 
-    def _send(self, text: str) -> None:
-        response = requests.post(
-            _API.format(token=self._token),
-            json={
-                "chat_id": self._chat_id,
-                "text": text,
-                "parse_mode": "HTML",
-                "disable_web_page_preview": True,
-            },
-            timeout=30,
-        )
+    def _send(self, text: str) -> bool:
+        try:
+            response = requests.post(
+                _API.format(token=self._token),
+                json={
+                    "chat_id": self._chat_id,
+                    "text": text,
+                    "parse_mode": "HTML",
+                    "disable_web_page_preview": True,
+                },
+                timeout=30,
+            )
+        except requests.RequestException as exc:
+            # exception text may embed the tokened URL — log the class only
+            logger.error("telegram send failed: %s", type(exc).__name__)
+            return False
         if not response.ok:
-            logger.error("telegram send failed: %s %s", response.status_code, response.text)
+            logger.error("telegram send failed: %s %s", response.status_code, response.text[:200])
+            return False
+        return True

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 from jobradar.config import PrefilterConfig, RelevanceConfig
@@ -25,6 +26,11 @@ class Prefilter:
     def __init__(self, relevance: RelevanceConfig, rules: PrefilterConfig) -> None:
         self._relevance = relevance
         self._rules = rules
+        # word-boundary match: "intern" must not kill "International Team" titles
+        self._seniority_patterns = [
+            (word, re.compile(rf"\b{re.escape(word.lower())}\b"))
+            for word in relevance.seniority_exclude
+        ]
 
     def check(self, listing: Listing) -> PrefilterResult:
         text = listing.text.lower()
@@ -41,7 +47,7 @@ class Prefilter:
             )
 
         title = listing.title.lower()
-        excluded = [w for w in self._relevance.seniority_exclude if w.lower() in title]
+        excluded = [word for word, pattern in self._seniority_patterns if pattern.search(title)]
         if excluded:
             return PrefilterResult(keep=False, reason=f"excluded seniority: {excluded}")
 

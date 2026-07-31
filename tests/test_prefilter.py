@@ -59,6 +59,14 @@ def test_junior_title_dropped() -> None:
     assert "seniority" in result.reason
 
 
+def test_international_title_is_not_an_intern() -> None:
+    # word-boundary matching: "intern" must not fire inside "International"
+    result = make_prefilter().check(listing("Senior SFCC Developer - International Team", "SFRA"))
+    assert result.keep
+    result_de = make_prefilter().check(listing("SFCC Entwickler, internationales Projekt", "SFRA"))
+    assert result_de.keep
+
+
 def test_tier2_only_listing_passes() -> None:
     result = make_prefilter().check(listing("Backend Engineer", "commercetools platform"))
     assert result.keep

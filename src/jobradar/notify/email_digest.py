@@ -26,7 +26,7 @@ class EmailDigest:
         if cfg.enabled and not self.enabled:
             logger.warning("email digest enabled in config but SMTP_HOST/USER/PASSWORD missing")
 
-    def digest(self, items: list[StoredListing]) -> None:
+    def digest(self, items: list[StoredListing]) -> bool:
         now = datetime.now(UTC)
         message = EmailMessage()
         message["Subject"] = f"jobradar digest — {len(items)} match(es), {now:%Y-%m-%d}"
@@ -51,3 +51,5 @@ class EmailDigest:
                 smtp.send_message(message)
         except (smtplib.SMTPException, OSError) as exc:
             logger.error("email digest failed: %s", exc)
+            return False
+        return True

@@ -16,6 +16,8 @@ class Source(ABC):
     def __init__(self, max_runs_per_day: int | None, every_days: int | None = None) -> None:
         self.max_runs_per_day = max_runs_per_day
         self.every_days = every_days
+        # dry runs must not mutate external state (e.g. mark alert emails \Seen)
+        self.read_only = False
 
     @abstractmethod
     def fetch(self) -> list[Listing]: ...

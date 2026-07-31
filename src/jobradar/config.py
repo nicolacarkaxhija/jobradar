@@ -93,6 +93,9 @@ class EmailAlertsConfig(StrictModel):
     folder: str = "INBOX"
     max_messages_per_run: int = 25
     max_runs_per_day: int | None = None
+    # Anyone who learns the alerts address can mail it; only these sender domains
+    # (and their subdomains) are ingested. Empty list = source refuses to run.
+    allowed_sender_domains: tuple[str, ...] = ()
 
 
 class JSearchConfig(StrictModel):
@@ -127,6 +130,7 @@ class SourcesConfig(StrictModel):
 class StorageConfig(StrictModel):
     db_path: str = "data/jobradar.db"
     archive_dir: str = "archive"
+    tracking_path: str = "TRACKING.md"
 
 
 class DraftsConfig(StrictModel):
