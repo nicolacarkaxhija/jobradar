@@ -1,5 +1,7 @@
 # jobradar
 
+[![ci](https://github.com/nicolacarkaxhija/jobradar/actions/workflows/ci.yml/badge.svg)](https://github.com/nicolacarkaxhija/jobradar/actions/workflows/ci.yml)
+
 Config-driven job discovery — aggregate listings from APIs, RSS and the boards' own alert emails, score them against a personal rubric with a cheap LLM, and get pushed only what actually matters. Privacy-first: the engine is public, your search data never leaves your private repo.
 
 Built because keyword alerts can't tell _Salesforce Commerce Cloud_ from _Salesforce everything-else_ — and no existing aggregator covers German boards, DACH freelance platforms and semantic filtering at once.
