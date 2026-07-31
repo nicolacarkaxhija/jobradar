@@ -29,19 +29,24 @@ class Adzuna(Source):
         listings: list[Listing] = []
         for country in self._cfg.countries:
             for query in self._cfg.queries:
-                response = requests.get(
-                    _API.format(country=country),
-                    params={
-                        "app_id": self._app_id,
-                        "app_key": self._app_key,
-                        "what": query,
-                        "results_per_page": str(self._cfg.results_per_page),
-                        "content-type": "application/json",
-                    },
-                    headers={"User-Agent": USER_AGENT},
-                    timeout=30,
-                )
-                response.raise_for_status()
+                try:
+                    response = requests.get(
+                        _API.format(country=country),
+                        params={
+                            "app_id": self._app_id,
+                            "app_key": self._app_key,
+                            "what": query,
+                            "results_per_page": str(self._cfg.results_per_page),
+                            "content-type": "application/json",
+                        },
+                        headers={"User-Agent": USER_AGENT},
+                        timeout=30,
+                    )
+                    response.raise_for_status()
+                except requests.RequestException as exc:
+                    # credentials ride in the query string; keep them out of logs
+                    message = str(exc).replace(self._app_key, "***").replace(self._app_id, "***")
+                    raise RuntimeError(message) from None
                 for item in response.json().get("results", []):
                     description = str(item.get("description", ""))
                     salary_min, salary_max = item.get("salary_min"), item.get("salary_max")

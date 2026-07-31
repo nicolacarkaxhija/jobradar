@@ -22,6 +22,9 @@ Create a fresh email address used **only** for job-board alerts (e.g. Gmail).
    - freelancermap Projektalarm
    - GULP project alerts
 3. Set the `IMAP_*` secrets (step 4). The pipeline reads UNSEEN messages and marks them processed.
+4. Keep `email_alerts.allowed_sender_domains` in `config.yaml` in sync with the boards you
+   subscribe to — anything mailed to the address from another domain is ignored by design
+   (the alerts address is harvestable; without the allowlist anyone could inject "listings").
 
 ## 3. Free API keys
 
@@ -78,6 +81,15 @@ submitted automatically.
 Flip `delivery.email.enabled: true` and add SMTP secrets
 (`SMTP_HOST`, `SMTP_USER`, `SMTP_PASSWORD`, optional `SMTP_PORT` / `DIGEST_EMAIL_TO`).
 The evening digest then also lands in your inbox, same items as Telegram.
+
+## 9. Application tracking (v2)
+
+Copy [templates/data-repo/track.yml](../templates/data-repo/track.yml) to
+`.github/workflows/track.yml` in the data repo. Then, from Actions → track → Run workflow
+(works from a phone): paste the listing URL, pick `applied` / `interviewing` / `offer` /
+`rejected` / `ghosted`, optionally add a note. The run updates the DB and regenerates
+`TRACKING.md`, grouped by status. Locally the same thing is
+`jobradar track <url> applied --note "..."`.
 
 ## Tuning
 
