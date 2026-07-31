@@ -28,10 +28,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # no `cache: pip` here — the data repo has no requirements/pyproject file,
+      # and setup-python's pip cache errors out without one
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-          cache: pip
 
       - name: Install engine
         run: pip install "jobradar[jobspy] @ git+https://github.com/nicolacarkaxhija/jobradar@main"
