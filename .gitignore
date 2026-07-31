@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+# local runs — real state lives in the private data repo
+data/
+archive/
+config.yaml
+.env

@@ -1,0 +1,61 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "jobradar"
+version = "0.1.0"
+description = "Config-driven job discovery — aggregate listings from APIs, RSS and alert emails, score them with an LLM rubric, get pushed only what matters. Your data stays in your private repo."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Nicola Carkaxhija" }]
+dependencies = [
+    "requests>=2.31",
+    "PyYAML>=6.0",
+    "feedparser>=6.0",
+    "beautifulsoup4>=4.12",
+    "anthropic>=0.40",
+    "pydantic>=2.5",
+]
+
+[project.optional-dependencies]
+jobspy = ["python-jobspy>=1.1.80"]
+dev = [
+    "pytest>=8.0",
+    "mypy>=1.10",
+    "ruff>=0.4",
+    "types-requests",
+    "types-PyYAML",
+]
+
+[project.scripts]
+jobradar = "jobradar.cli:main"
+
+[project.urls]
+Repository = "https://github.com/nicolacarkaxhija/jobradar"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+jobradar = ["py.typed"]
+
+[tool.mypy]
+strict = true
+python_version = "3.11"
+warn_unreachable = true
+
+[[tool.mypy.overrides]]
+module = ["feedparser", "feedparser.*", "jobspy", "jobspy.*", "bs4", "bs4.*"]
+ignore_missing_imports = true
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
