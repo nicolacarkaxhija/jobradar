@@ -8,6 +8,7 @@ from typing import cast
 
 from jobradar.calibration import CalibrationSuite, report, run_calibration
 from jobradar.config import JobRadarConfig
+from jobradar.drafts import DraftWriter
 from jobradar.models import APP_STATUSES, AppStatus
 from jobradar.pipeline import run
 from jobradar.store import Store
@@ -48,6 +49,12 @@ def main(argv: list[str] | None = None) -> int:
         "--suite", default=None, help="path to a calibration YAML (defaults to the built-in suite)"
     )
 
+    draft_parser = subparsers.add_parser(
+        "draft", help="write an application draft for any listing already in the DB"
+    )
+    draft_parser.add_argument("term", help="listing URL, or an id prefix of at least 8 chars")
+    draft_parser.add_argument("--config", default="config.yaml", help="path to config.yaml")
+
     track_parser = subparsers.add_parser("track", help="record application progress")
     track_parser.add_argument("term", help="listing URL, or an id prefix of at least 8 chars")
     track_parser.add_argument("status", choices=list(APP_STATUSES))
@@ -61,6 +68,8 @@ def main(argv: list[str] | None = None) -> int:
         return _track(args)
     if args.command == "calibrate":
         return _calibrate(args)
+    if args.command == "draft":
+        return _draft(args)
 
     stats = run(
         config_path=args.config,
@@ -85,6 +94,35 @@ def _calibrate(args: argparse.Namespace) -> int:
     print()
     print(report(results))
     return 0 if all(r.passed for r in results) else 1
+
+
+def _draft(args: argparse.Namespace) -> int:
+    """Drafts are written automatically only for pushed matches; this covers the
+    digest-tier listing you decided to apply for anyway."""
+    cfg = JobRadarConfig.load(args.config)
+    writer = DraftWriter(cfg)
+    if not writer.available:
+        print(
+            "drafts unavailable — check drafts.enabled, the CV at "
+            f"{cfg.drafts.cv_path}, and ANTHROPIC_API_KEY"
+        )
+        return 2
+    with Store(cfg.storage.db_path) as store:
+        found = store.find(args.term)
+        if found is None:
+            print(f"no listing matches {args.term!r} (use the URL or an id prefix >= 8 chars)")
+            return 2
+        listing, verdict = found
+        if verdict is None:
+            print(f"{listing.title} has no verdict yet — nothing to tailor a draft against")
+            return 2
+        path = writer.write(listing, verdict, force=True)
+        if path is None:
+            print("draft generation failed — see the log above")
+            return 1
+        store.set_draft_path(listing.id, path.as_posix())
+    print(f"draft written: {path}")
+    return 0
 
 
 def _track(args: argparse.Namespace) -> int:

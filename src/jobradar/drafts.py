@@ -82,8 +82,11 @@ class DraftWriter:
         )
         self.available = self._cfg.enabled and bool(self._cv.strip()) and credentials
 
-    def write(self, listing: Listing, verdict: Verdict) -> Path | None:
-        if not self.available or self._written >= self._cfg.max_per_run:
+    def write(self, listing: Listing, verdict: Verdict, force: bool = False) -> Path | None:
+        """force bypasses the per-run cap — used by the on-demand `jobradar draft`."""
+        if not self.available:
+            return None
+        if not force and self._written >= self._cfg.max_per_run:
             return None
         if self._client is None:
             self._client = anthropic.Anthropic()

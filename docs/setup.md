@@ -85,6 +85,11 @@ application draft — German for German listings, English otherwise — committe
 and linked in the Telegram push. Drafts are review-and-send by design: nothing is ever
 submitted automatically.
 
+For a digest-tier listing you decided to apply for anyway (scored below the push
+threshold, so never drafted), generate one on demand with `jobradar draft <url>` — or copy
+[templates/data-repo/draft.yml](../templates/data-repo/draft.yml) to the data repo and run
+it from the Actions UI like the tracking workflow.
+
 ## 8. Email digest copy (v2, optional)
 
 Flip `delivery.email.enabled: true` and add SMTP secrets
