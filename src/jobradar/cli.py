@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 from typing import cast
 
+from jobradar.calibration import CalibrationSuite, report, run_calibration
 from jobradar.config import JobRadarConfig
 from jobradar.models import APP_STATUSES, AppStatus
 from jobradar.pipeline import run
@@ -39,6 +40,14 @@ def main(argv: list[str] | None = None) -> int:
         "--score-limit", type=int, default=None, help="cap LLM-scored listings this run"
     )
 
+    calibrate_parser = subparsers.add_parser(
+        "calibrate", help="score a fixture suite to check the rubric before trusting it"
+    )
+    calibrate_parser.add_argument("--config", default="config.yaml", help="path to config.yaml")
+    calibrate_parser.add_argument(
+        "--suite", default=None, help="path to a calibration YAML (defaults to the built-in suite)"
+    )
+
     track_parser = subparsers.add_parser("track", help="record application progress")
     track_parser.add_argument("term", help="listing URL, or an id prefix of at least 8 chars")
     track_parser.add_argument("status", choices=list(APP_STATUSES))
@@ -50,6 +59,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "track":
         return _track(args)
+    if args.command == "calibrate":
+        return _calibrate(args)
 
     stats = run(
         config_path=args.config,
@@ -61,6 +72,19 @@ def main(argv: list[str] | None = None) -> int:
     print(stats.summary())
     # any persistently failing source must turn the scheduled workflow red
     return 1 if stats.source_errors else 0
+
+
+def _calibrate(args: argparse.Namespace) -> int:
+    cfg = JobRadarConfig.load(args.config)
+    suite = CalibrationSuite.load(args.suite)
+    try:
+        results = run_calibration(cfg, suite)
+    except RuntimeError as exc:  # missing credentials is the expected failure here
+        print(exc)
+        return 2
+    print()
+    print(report(results))
+    return 0 if all(r.passed for r in results) else 1
 
 
 def _track(args: argparse.Namespace) -> int:

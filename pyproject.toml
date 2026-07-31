@@ -39,7 +39,7 @@ Repository = "https://github.com/nicolacarkaxhija/jobradar"
 where = ["src"]
 
 [tool.setuptools.package-data]
-jobradar = ["py.typed"]
+jobradar = ["py.typed", "fixtures/*.yaml"]
 
 [tool.mypy]
 strict = true

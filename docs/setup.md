@@ -102,6 +102,11 @@ Copy [templates/data-repo/track.yml](../templates/data-repo/track.yml) to
 
 ## Tuning
 
+Run `jobradar calibrate` first — it scores a built-in suite of twelve listings against the
+bands they should land in, so you find a mis-calibrated rubric in one cheap run instead of
+after a week of live traffic. Re-run it after any change to `relevance`, `compensation`,
+or the rubric itself. Then adjust:
+
 - Too noisy → raise `scoring.push_threshold`, tighten `tier1_signals`.
 - Too quiet → lower `digest_min`, broaden alert emails, add tier2 signals.
 - Comp anchors, office cities, seniority band: all in `config.yaml`, no code changes.
