@@ -43,7 +43,16 @@ Create a fresh email address used **only** for job-board alerts (e.g. Gmail).
 
 ## 5. Secrets
 
-In the **private data repo** → Settings → Secrets and variables → Actions:
+Fastest path: copy `.env.example` to `.env` in the engine checkout, fill in what you have, and run
+
+```bash
+./scripts/sync-secrets.sh .env nicolacarkaxhija/jobradar-data
+```
+
+It pushes every non-empty value as an Actions secret (empty ones are skipped and reported), and is safe
+to re-run after rotating a credential. `.env` is gitignored; values go over stdin, not argv.
+
+Or set them by hand in the **private data repo** → Settings → Secrets and variables → Actions:
 
 ```
 ANTHROPIC_API_KEY
