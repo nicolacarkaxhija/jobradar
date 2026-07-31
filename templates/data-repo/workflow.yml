@@ -49,6 +49,11 @@ jobs:
           ADZUNA_APP_KEY: ${{ secrets.ADZUNA_APP_KEY }}
           JOOBLE_API_KEY: ${{ secrets.JOOBLE_API_KEY }}
           JSEARCH_API_KEY: ${{ secrets.JSEARCH_API_KEY }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          DIGEST_EMAIL_TO: ${{ secrets.DIGEST_EMAIL_TO }}
         run: |
           DIGEST=""
           if [ "$(date -u +%H)" = "18" ] || [ "${{ inputs.digest }}" = "true" ]; then
@@ -60,6 +65,6 @@ jobs:
         run: |
           git config user.name "jobradar-bot"
           git config user.email "actions@users.noreply.github.com"
-          git add data/ archive/
+          git add data/ archive/ drafts/ 2>/dev/null || git add data/ archive/
           git diff --cached --quiet || git commit -m "chore: run $(date -u +'%Y-%m-%d %H:%M')"
           git push

@@ -5,7 +5,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from jobradar.config import JobRadarConfig
+from jobradar.drafts import DraftWriter
 from jobradar.models import Listing, Verdict
+from jobradar.notify.email_digest import EmailDigest
 from jobradar.notify.markdown_archive import MarkdownArchive
 from jobradar.notify.telegram import Telegram
 from jobradar.prefilter import Prefilter
@@ -24,6 +26,7 @@ class RunStats:
     duplicates: int = 0
     scored: int = 0
     pushed: int = 0
+    drafted: int = 0
     digested: int = 0
     source_errors: dict[str, str] = field(default_factory=dict)
 
@@ -31,8 +34,20 @@ class RunStats:
         return (
             f"fetched={self.fetched} seen={self.already_seen} dropped={self.dropped} "
             f"dups={self.duplicates} scored={self.scored} pushed={self.pushed} "
-            f"digested={self.digested} errors={len(self.source_errors)}"
+            f"drafted={self.drafted} digested={self.digested} errors={len(self.source_errors)}"
         )
+
+
+@dataclass(slots=True)
+class _Runtime:
+    cfg: JobRadarConfig
+    store: Store
+    prefilter: Prefilter
+    scorer: Scorer
+    drafts: DraftWriter
+    telegram: Telegram
+    stats: RunStats
+    score_limit: int | None
 
 
 def run(
@@ -46,12 +61,25 @@ def run(
     stats = RunStats()
 
     store = Store(":memory:" if dry_run else cfg.storage.db_path)
-    prefilter = Prefilter(cfg.relevance, cfg.prefilter)
-    scorer = Scorer(cfg)
     telegram = Telegram(cfg.delivery.telegram)
+    email = EmailDigest(cfg.delivery.email)
     archive = MarkdownArchive(cfg.delivery.markdown_archive, cfg.storage)
+    drafts = DraftWriter(cfg)
     if dry_run:
         telegram.enabled = False
+        email.enabled = False
+        drafts.available = False
+
+    runtime = _Runtime(
+        cfg=cfg,
+        store=store,
+        prefilter=Prefilter(cfg.relevance, cfg.prefilter),
+        scorer=Scorer(cfg),
+        drafts=drafts,
+        telegram=telegram,
+        stats=stats,
+        score_limit=score_limit,
+    )
 
     with store:
         for source in build_sources(cfg, only=only):
@@ -69,13 +97,15 @@ def run(
             logger.info("%s: %d listings", source.name, len(listings))
             stats.fetched += len(listings)
             for listing in listings:
-                _process(listing, store, prefilter, scorer, telegram, cfg, stats, score_limit)
+                _process(listing, runtime)
 
         if digest:
             items = store.pending_digest(cfg.scoring.digest_min)
             if items:
                 if telegram.enabled:
                     telegram.digest(items)
+                if email.enabled:
+                    email.digest(items)
                 if archive.enabled and not dry_run:
                     archive.write(items)
                 store.mark_digested([item.id for item in items])
@@ -85,37 +115,28 @@ def run(
     return stats
 
 
-def _process(
-    listing: Listing,
-    store: Store,
-    prefilter: Prefilter,
-    scorer: Scorer,
-    telegram: Telegram,
-    cfg: JobRadarConfig,
-    stats: RunStats,
-    score_limit: int | None,
-) -> None:
-    if store.has(listing.id):
-        stats.already_seen += 1
+def _process(listing: Listing, rt: _Runtime) -> None:
+    if rt.store.has(listing.id):
+        rt.stats.already_seen += 1
         return
 
-    result = prefilter.check(listing)
+    result = rt.prefilter.check(listing)
     if not result.keep:
-        store.add(listing, status="dropped", reason=result.reason)
-        stats.dropped += 1
+        rt.store.add(listing, status="dropped", reason=result.reason)
+        rt.stats.dropped += 1
         return
 
-    dup_of = store.find_fuzzy_duplicate(listing, cfg.prefilter.fuzzy_dedupe_threshold)
+    dup_of = rt.store.find_fuzzy_duplicate(listing, rt.cfg.prefilter.fuzzy_dedupe_threshold)
     if dup_of is not None:
-        store.add(listing, status="duplicate", dup_of=dup_of)
-        stats.duplicates += 1
+        rt.store.add(listing, status="duplicate", dup_of=dup_of)
+        rt.stats.duplicates += 1
         return
 
     verdict: Verdict | None = None
-    if scorer.available and (score_limit is None or stats.scored < score_limit):
-        verdict = scorer.score(listing)
+    if rt.scorer.available and (rt.score_limit is None or rt.stats.scored < rt.score_limit):
+        verdict = rt.scorer.score(listing)
         if verdict is not None:
-            stats.scored += 1
+            rt.stats.scored += 1
             logger.info(
                 "scored %d [%s] %s @ %s — %s",
                 verdict.score,
@@ -125,10 +146,20 @@ def _process(
                 verdict.reason,
             )
 
-    pushed = False
-    if verdict is not None and verdict.score >= cfg.scoring.push_threshold and telegram.enabled:
-        telegram.push(listing, verdict)
-        pushed = True
-        stats.pushed += 1
+    pushed = verdict is not None and verdict.score >= rt.cfg.scoring.push_threshold
+    draft_path: str | None = None
+    if pushed and verdict is not None:
+        path = rt.drafts.write(listing, verdict) if rt.drafts.available else None
+        if path is not None:
+            draft_path = path.as_posix()
+            rt.stats.drafted += 1
+        if rt.telegram.enabled:
+            rt.telegram.push(listing, verdict, draft_path)
+            rt.stats.pushed += 1
 
-    store.add(listing, status="pushed" if pushed else "new", verdict=verdict)
+    rt.store.add(
+        listing,
+        status="pushed" if pushed and rt.telegram.enabled else "new",
+        verdict=verdict,
+        draft_path=draft_path,
+    )

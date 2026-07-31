@@ -26,7 +26,7 @@ class Telegram:
         if cfg.enabled and not self.enabled:
             logger.warning("telegram enabled in config but TELEGRAM_BOT_TOKEN/CHAT_ID missing")
 
-    def push(self, listing: Listing, verdict: Verdict) -> None:
+    def push(self, listing: Listing, verdict: Verdict, draft_path: str | None = None) -> None:
         comp = verdict.extracted.comp
         lines = [
             f"<b>{verdict.score} · {html.escape(listing.title)}</b>",
@@ -35,6 +35,8 @@ class Telegram:
         ]
         if comp:
             lines.append(f"💶 {html.escape(comp)}")
+        if draft_path:
+            lines.append(f"📝 draft ready: {html.escape(draft_path)}")
         lines.append(html.escape(listing.url))
         self._send("\n".join(lines))
 
@@ -43,11 +45,12 @@ class Telegram:
         lines: list[str] = []
         for item in items:
             marker = "⚡ " if item.status == "pushed" else ""
+            draft = f"\n    📝 {html.escape(item.draft_path)}" if item.draft_path else ""
             lines.append(
                 f"{marker}<b>{item.score}</b> · "
                 f'<a href="{html.escape(item.url, quote=True)}">{html.escape(item.title)}</a>'
                 f" · {html.escape(item.company)} · {html.escape(item.location)}\n"
-                f"    {html.escape(item.reason or '')}"
+                f"    {html.escape(item.reason or '')}{draft}"
             )
         chunk = header
         for line in lines:

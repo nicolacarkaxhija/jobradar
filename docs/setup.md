@@ -63,6 +63,22 @@ Actions → jobradar → **Run workflow** (tick `digest` to get an immediate sum
 - `data/jobradar.db` and (after a digest) `archive/YYYY-MM-DD.md` were committed
 - top matches arrive in Telegram
 
+## 7. Application drafts (v2, optional)
+
+1. Commit your CV as `private/cv.md` in the **private** data repo (Markdown or plain text — it's what the draft model reads).
+2. Flip `drafts.enabled: true` in `config.yaml`.
+
+Every pushed match (score ≥ `push_threshold`, capped at `max_per_run`) gets a tailored
+application draft — German for German listings, English otherwise — committed to `drafts/`
+and linked in the Telegram push. Drafts are review-and-send by design: nothing is ever
+submitted automatically.
+
+## 8. Email digest copy (v2, optional)
+
+Flip `delivery.email.enabled: true` and add SMTP secrets
+(`SMTP_HOST`, `SMTP_USER`, `SMTP_PASSWORD`, optional `SMTP_PORT` / `DIGEST_EMAIL_TO`).
+The evening digest then also lands in your inbox, same items as Telegram.
+
 ## Tuning
 
 - Too noisy → raise `scoring.push_threshold`, tighten `tier1_signals`.

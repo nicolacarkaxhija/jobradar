@@ -118,8 +118,25 @@ class StorageConfig(StrictModel):
     archive_dir: str = "archive"
 
 
+class DraftsConfig(StrictModel):
+    """v2: tailored application drafts for pushed matches — review-and-send, never auto-submit."""
+
+    enabled: bool = False
+    model: str = "claude-opus-5"
+    cv_path: str = "private/cv.md"
+    output_dir: str = "drafts"
+    max_per_run: int = 5
+
+
 class TelegramConfig(StrictModel):
     enabled: bool = True
+
+
+class EmailDeliveryConfig(StrictModel):
+    """SMTP digest copy. Credentials via SMTP_HOST/SMTP_PORT/SMTP_USER/SMTP_PASSWORD,
+    recipient via DIGEST_EMAIL_TO (defaults to SMTP_USER)."""
+
+    enabled: bool = False
 
 
 class MarkdownArchiveConfig(StrictModel):
@@ -128,6 +145,7 @@ class MarkdownArchiveConfig(StrictModel):
 
 class DeliveryConfig(StrictModel):
     telegram: TelegramConfig = TelegramConfig()
+    email: EmailDeliveryConfig = EmailDeliveryConfig()
     markdown_archive: MarkdownArchiveConfig = MarkdownArchiveConfig()
 
 
@@ -140,6 +158,7 @@ class JobRadarConfig(StrictModel):
     scoring: ScoringConfig = ScoringConfig()
     sources: SourcesConfig = SourcesConfig()
     storage: StorageConfig = StorageConfig()
+    drafts: DraftsConfig = DraftsConfig()
     delivery: DeliveryConfig = DeliveryConfig()
 
     @classmethod

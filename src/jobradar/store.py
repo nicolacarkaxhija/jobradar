@@ -26,7 +26,8 @@ CREATE TABLE IF NOT EXISTS listings (
     reason      TEXT,
     extracted   TEXT,
     status      TEXT NOT NULL,
-    dup_of      TEXT
+    dup_of      TEXT,
+    draft_path  TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_listings_status ON listings(status);
 CREATE INDEX IF NOT EXISTS idx_listings_first_seen ON listings(first_seen);
@@ -54,6 +55,7 @@ class StoredListing:
     category: str | None
     reason: str | None
     status: str
+    draft_path: str | None
 
 
 def _utcnow() -> str:
@@ -72,6 +74,14 @@ class Store:
             Path(path).parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(str(path))
         self._conn.executescript(_SCHEMA)
+        self._migrate()
+
+    def _migrate(self) -> None:
+        # CREATE TABLE IF NOT EXISTS never alters an existing table — patch older DBs here.
+        columns = {row[1] for row in self._conn.execute("PRAGMA table_info(listings)")}
+        if "draft_path" not in columns:
+            self._conn.execute("ALTER TABLE listings ADD COLUMN draft_path TEXT")
+            self._conn.commit()
 
     def __enter__(self) -> Store:
         return self
@@ -116,12 +126,13 @@ class Store:
         verdict: Verdict | None = None,
         reason: str | None = None,
         dup_of: str | None = None,
+        draft_path: str | None = None,
     ) -> None:
         self._conn.execute(
             "INSERT OR IGNORE INTO listings "
             "(id, source, title, company, location, url, dedupe_key, posted_at, first_seen,"
-            " score, tier, category, reason, extracted, status, dup_of) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " score, tier, category, reason, extracted, status, dup_of, draft_path) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 listing.id,
                 listing.source,
@@ -139,6 +150,7 @@ class Store:
                 verdict.extracted.model_dump_json() if verdict else None,
                 status,
                 dup_of,
+                draft_path,
             ),
         )
         self._conn.commit()
@@ -146,7 +158,7 @@ class Store:
     def pending_digest(self, min_score: int) -> list[StoredListing]:
         rows = self._conn.execute(
             "SELECT id, source, title, company, location, url, posted_at, first_seen,"
-            " score, tier, category, reason, status "
+            " score, tier, category, reason, status, draft_path "
             "FROM listings WHERE status IN ('new', 'pushed') AND score >= ? "
             "ORDER BY score DESC",
             (min_score,),
