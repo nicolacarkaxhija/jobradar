@@ -14,7 +14,7 @@ from jobradar.notify.telegram import Telegram
 from jobradar.prefilter import Prefilter
 from jobradar.scoring import Scorer
 from jobradar.sources import build_sources
-from jobradar.store import Store
+from jobradar.store import Store, StoredListing
 
 logger = logging.getLogger(__name__)
 
@@ -111,32 +111,44 @@ def run(
         if digest:
             items = store.pending_digest(cfg.scoring.digest_min)
             if items:
-                delivered = False
-                failed = False
-                if telegram.enabled:
-                    ok = telegram.digest(items)
-                    delivered |= ok
-                    failed |= not ok
-                if email.enabled:
-                    ok = email.digest(items)
-                    delivered |= ok
-                    failed |= not ok
-                if archive.enabled and not dry_run:
-                    archive.write(items)
-                    delivered = delivered or not (telegram.enabled or email.enabled)
-                # only consume the queue when every enabled channel actually delivered;
-                # a failed channel leaves items pending so the next digest retries them
-                if delivered and not failed:
-                    store.mark_digested([item.id for item in items])
-                    stats.digested = len(items)
-                else:
-                    logger.error(
-                        "digest delivery incomplete — leaving %d item(s) pending for retry",
-                        len(items),
-                    )
+                _deliver_digest(items, telegram, email, archive, store, stats, dry_run)
 
     logger.info("run complete: %s", stats.summary())
     return stats
+
+
+def _deliver_digest(
+    items: list[StoredListing],
+    telegram: Telegram,
+    email: EmailDigest,
+    archive: MarkdownArchive,
+    store: Store,
+    stats: RunStats,
+    dry_run: bool,
+) -> None:
+    delivered = False
+    failed = False
+    if telegram.enabled:
+        ok = telegram.digest(items)
+        delivered |= ok
+        failed |= not ok
+    if email.enabled:
+        ok = email.digest(items)
+        delivered |= ok
+        failed |= not ok
+    if archive.enabled and not dry_run:
+        archive.write(items)
+        # the passive archive only counts as delivery when no push channel is configured
+        delivered = delivered or not (telegram.enabled or email.enabled)
+    # only consume the queue when every enabled channel actually delivered;
+    # a failed channel leaves items pending so the next digest retries them
+    if delivered and not failed:
+        store.mark_digested([item.id for item in items])
+        stats.digested = len(items)
+    else:
+        logger.error(
+            "digest delivery incomplete — leaving %d item(s) pending for retry", len(items)
+        )
 
 
 def _due(store: Store, source_name: str, every_days: int) -> bool:
