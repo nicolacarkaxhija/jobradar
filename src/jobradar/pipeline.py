@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 from jobradar.config import JobRadarConfig
@@ -87,6 +88,11 @@ def run(
             if quota is not None and store.runs_today(source.name) >= quota:
                 logger.info("%s: daily quota (%d) reached, skipping", source.name, quota)
                 continue
+            if source.every_days is not None and not _due(store, source.name, source.every_days):
+                logger.info(
+                    "%s: ran within the last %d days, skipping", source.name, source.every_days
+                )
+                continue
             try:
                 listings = source.fetch()
             except Exception as exc:  # one broken source must not kill the run
@@ -113,6 +119,14 @@ def run(
 
     logger.info("run complete: %s", stats.summary())
     return stats
+
+
+def _due(store: Store, source_name: str, every_days: int) -> bool:
+    last = store.last_run_day(source_name)
+    if last is None:
+        return True
+    elapsed = datetime.now(UTC).date() - date.fromisoformat(last)
+    return elapsed.days >= every_days
 
 
 def _process(listing: Listing, rt: _Runtime) -> None:

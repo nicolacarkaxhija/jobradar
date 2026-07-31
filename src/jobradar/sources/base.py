@@ -13,8 +13,9 @@ class Source(ABC):
 
     name: ClassVar[str]
 
-    def __init__(self, max_runs_per_day: int | None) -> None:
+    def __init__(self, max_runs_per_day: int | None, every_days: int | None = None) -> None:
         self.max_runs_per_day = max_runs_per_day
+        self.every_days = every_days
 
     @abstractmethod
     def fetch(self) -> list[Listing]: ...

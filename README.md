@@ -68,7 +68,7 @@ Add `ANTHROPIC_API_KEY` to score, `--score-limit 5` to cap spend while testing.
 
 - [x] v2: tailored application drafts (DE/EN matching the listing) for top matches — review-and-send, never auto-submit
 - [x] Email digest channel behind the same notifier interface
-- [ ] Config-driven LLM web-search sweep ("what did the APIs miss this week?")
+- [x] Config-driven LLM web-search sweep ("what did the APIs miss this week?")
 - [ ] Application tracking beyond the Markdown archive
 
 ## License

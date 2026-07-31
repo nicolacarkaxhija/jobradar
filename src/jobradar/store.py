@@ -171,6 +171,12 @@ class Store:
         )
         self._conn.commit()
 
+    def last_run_day(self, source: str) -> str | None:
+        row = self._conn.execute(
+            "SELECT MAX(day) FROM source_runs WHERE source = ?", (source,)
+        ).fetchone()
+        return str(row[0]) if row and row[0] else None
+
     def runs_today(self, source: str) -> int:
         row = self._conn.execute(
             "SELECT runs FROM source_runs WHERE day = ? AND source = ?", (_today(), source)

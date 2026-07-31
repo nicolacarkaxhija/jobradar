@@ -8,10 +8,9 @@ import os
 from email.message import EmailMessage
 
 import anthropic
-from pydantic import BaseModel, ConfigDict
 
 from jobradar.config import EmailAlertsConfig, ScoringConfig
-from jobradar.models import Listing
+from jobradar.models import ExtractedListings, Listing
 from jobradar.sources.base import Source, html_to_text
 
 logger = logging.getLogger(__name__)
@@ -24,22 +23,6 @@ _EXTRACTION_PROMPT = (
     "unsubscribe or settings URLs, when both are present (tracking-wrapped job "
     "links are fine — they are all we get)."
 )
-
-
-class MailListing(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    title: str
-    company: str
-    location: str
-    url: str
-    snippet: str
-
-
-class MailListings(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    listings: tuple[MailListing, ...]
 
 
 class EmailAlerts(Source):
@@ -94,7 +77,7 @@ class EmailAlerts(Source):
                 max_tokens=2048,
                 system=_EXTRACTION_PROMPT,
                 messages=[{"role": "user", "content": f"From: {sender}\n\n{body[:12000]}"}],
-                output_format=MailListings,
+                output_format=ExtractedListings,
             )
         except anthropic.APIError as exc:
             logger.error("email extraction failed (%s): %s", domain, exc)

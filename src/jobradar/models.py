@@ -43,6 +43,24 @@ class Listing:
         return f"{self.title}\n{self.company}\n{self.location}\n{self.description}"
 
 
+class ExtractedListing(BaseModel):
+    """One listing pulled out of unstructured text (alert emails, web-sweep notes)."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    title: str
+    company: str
+    location: str
+    url: str
+    snippet: str
+
+
+class ExtractedListings(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    listings: tuple[ExtractedListing, ...]
+
+
 class Extracted(BaseModel):
     """Structured facts the scorer pulls out of a listing."""
 

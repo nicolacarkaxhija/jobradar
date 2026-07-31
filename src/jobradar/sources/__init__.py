@@ -42,6 +42,10 @@ def build_sources(cfg: JobRadarConfig, only: frozenset[str] | None = None) -> li
         from jobradar.sources.jsearch import JSearch
 
         sources.append(JSearch(src.jsearch))
+    if src.llm_sweep.enabled:
+        from jobradar.sources.llm_sweep import LlmSweep
+
+        sources.append(LlmSweep(src.llm_sweep, cfg.relevance, cfg.scoring))
 
     if only is not None:
         sources = [s for s in sources if s.name in only]
