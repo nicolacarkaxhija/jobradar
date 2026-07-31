@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from types import TracebackType
 
-from jobradar.models import Listing, ListingStatus, Verdict
+from jobradar.models import AppStatus, Listing, ListingStatus, Verdict
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS listings (
@@ -27,7 +27,10 @@ CREATE TABLE IF NOT EXISTS listings (
     extracted   TEXT,
     status      TEXT NOT NULL,
     dup_of      TEXT,
-    draft_path  TEXT
+    draft_path  TEXT,
+    app_status  TEXT,
+    app_note    TEXT,
+    app_updated TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_listings_status ON listings(status);
 CREATE INDEX IF NOT EXISTS idx_listings_first_seen ON listings(first_seen);
@@ -58,6 +61,20 @@ class StoredListing:
     draft_path: str | None
 
 
+@dataclass(frozen=True, slots=True)
+class TrackedListing:
+    id: str
+    title: str
+    company: str
+    location: str
+    url: str
+    score: int | None
+    draft_path: str | None
+    app_status: str
+    app_note: str | None
+    app_updated: str
+
+
 def _utcnow() -> str:
     return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -79,9 +96,10 @@ class Store:
     def _migrate(self) -> None:
         # CREATE TABLE IF NOT EXISTS never alters an existing table — patch older DBs here.
         columns = {row[1] for row in self._conn.execute("PRAGMA table_info(listings)")}
-        if "draft_path" not in columns:
-            self._conn.execute("ALTER TABLE listings ADD COLUMN draft_path TEXT")
-            self._conn.commit()
+        for column in ("draft_path", "app_status", "app_note", "app_updated"):
+            if column not in columns:
+                self._conn.execute(f"ALTER TABLE listings ADD COLUMN {column} TEXT")
+        self._conn.commit()
 
     def __enter__(self) -> Store:
         return self
@@ -170,6 +188,31 @@ class Store:
             "UPDATE listings SET status = 'digested' WHERE id = ?", [(i,) for i in ids]
         )
         self._conn.commit()
+
+    def track(self, term: str, status: AppStatus, note: str) -> TrackedListing | None:
+        """Record application progress. `term` is a listing URL or an id prefix (>= 8 chars)."""
+        row = self._conn.execute("SELECT id FROM listings WHERE url = ?", (term,)).fetchone()
+        if row is None and len(term) >= 8:
+            row = self._conn.execute(
+                "SELECT id FROM listings WHERE id LIKE ?", (f"{term}%",)
+            ).fetchone()
+        if row is None:
+            return None
+        listing_id = str(row[0])
+        self._conn.execute(
+            "UPDATE listings SET app_status = ?, app_note = ?, app_updated = ? WHERE id = ?",
+            (status, note, _utcnow(), listing_id),
+        )
+        self._conn.commit()
+        return next((t for t in self.tracked() if t.id == listing_id), None)
+
+    def tracked(self) -> list[TrackedListing]:
+        rows = self._conn.execute(
+            "SELECT id, title, company, location, url, score, draft_path,"
+            " app_status, app_note, app_updated "
+            "FROM listings WHERE app_status IS NOT NULL ORDER BY app_updated DESC"
+        ).fetchall()
+        return [TrackedListing(*row) for row in rows]
 
     def last_run_day(self, source: str) -> str | None:
         row = self._conn.execute(

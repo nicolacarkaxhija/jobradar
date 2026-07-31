@@ -9,6 +9,10 @@ from pydantic import BaseModel, ConfigDict
 
 ListingStatus = Literal["new", "pushed", "digested", "dropped", "duplicate"]
 
+AppStatus = Literal["applied", "interviewing", "offer", "rejected", "ghosted"]
+
+APP_STATUSES: tuple[AppStatus, ...] = ("applied", "interviewing", "offer", "rejected", "ghosted")
+
 _NORMALIZE_RE = re.compile(r"[^a-z0-9 ]+")
 
 
