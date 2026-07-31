@@ -1,0 +1,64 @@
+# Copy to .github/workflows/jobradar.yml in your PRIVATE data repo.
+#
+# Schedule (UTC): six polls across CET waking hours; the 18:00 UTC run
+# (19:00/20:00 CET) also sends the daily digest.
+name: jobradar
+
+on:
+  schedule:
+    - cron: "0 4,7,10,13,15,18 * * *"
+  workflow_dispatch:
+    inputs:
+      digest:
+        description: force a digest with this run
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: jobradar
+  cancel-in-progress: false
+
+jobs:
+  poll:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install engine
+        run: pip install "jobradar[jobspy] @ git+https://github.com/nicolacarkaxhija/jobradar@main"
+
+      - name: Run pipeline
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          IMAP_HOST: ${{ secrets.IMAP_HOST }}
+          IMAP_USER: ${{ secrets.IMAP_USER }}
+          IMAP_PASSWORD: ${{ secrets.IMAP_PASSWORD }}
+          ADZUNA_APP_ID: ${{ secrets.ADZUNA_APP_ID }}
+          ADZUNA_APP_KEY: ${{ secrets.ADZUNA_APP_KEY }}
+          JOOBLE_API_KEY: ${{ secrets.JOOBLE_API_KEY }}
+          JSEARCH_API_KEY: ${{ secrets.JSEARCH_API_KEY }}
+        run: |
+          DIGEST=""
+          if [ "$(date -u +%H)" = "18" ] || [ "${{ inputs.digest }}" = "true" ]; then
+            DIGEST="--digest"
+          fi
+          jobradar run --config config.yaml $DIGEST
+
+      - name: Commit state
+        run: |
+          git config user.name "jobradar-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add data/ archive/
+          git diff --cached --quiet || git commit -m "chore: run $(date -u +'%Y-%m-%d %H:%M')"
+          git push
