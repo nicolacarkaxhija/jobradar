@@ -184,6 +184,52 @@ def test_partial_channel_failure_blocks_consumption(
         assert stats.digested == 0, "one failed channel must keep items pending"
 
 
+def test_retry_after_partial_failure_does_not_resend(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: object
+) -> None:
+    """The regression the second review caught: a failed SMTP channel used to make
+    the next run re-send the identical digest to Telegram (and re-append the archive)."""
+    with seeded_store() as store:
+        telegram, email, archive = make_digest_fixtures(tmp_path, archive_enabled=True)
+        telegram.enabled = True
+        telegram_sends: list[str] = []
+        monkeypatch.setattr(telegram, "_send", lambda text: telegram_sends.append(text) is None)
+        email.enabled = True
+        monkeypatch.setattr(email, "digest", lambda _i: False)  # SMTP down
+
+        items = store.pending_digest(min_score=50)
+        _deliver_digest(items, telegram, email, archive, store, RunStats(), dry_run=False)
+        assert len(telegram_sends) == 1
+
+        # next scheduled digest, SMTP still down
+        items = store.pending_digest(min_score=50)
+        _deliver_digest(items, telegram, email, archive, store, RunStats(), dry_run=False)
+        assert len(telegram_sends) == 1, "telegram already delivered — must not re-send"
+
+        # SMTP recovers: the queue drains without a duplicate telegram message
+        monkeypatch.setattr(email, "digest", lambda _i: True)
+        items = store.pending_digest(min_score=50)
+        stats = RunStats()
+        _deliver_digest(items, telegram, email, archive, store, stats, dry_run=False)
+        assert len(telegram_sends) == 1
+        assert stats.digested == 1
+        assert store.pending_digest(min_score=50) == []
+
+        archive_files = list((tmp_path / "archive").glob("*.md"))  # type: ignore[attr-defined]
+        body = archive_files[0].read_text(encoding="utf-8")
+        assert body.count("Senior SFCC Developer") == 1, "archive must not duplicate rows"
+
+
+def test_no_enabled_channel_holds_items(monkeypatch: pytest.MonkeyPatch, tmp_path: object) -> None:
+    with seeded_store() as store:
+        telegram, email, archive = make_digest_fixtures(tmp_path)
+        stats = RunStats()
+        items = store.pending_digest(min_score=50)
+        _deliver_digest(items, telegram, email, archive, store, stats, dry_run=False)
+        assert stats.digested == 0
+        assert store.pending_digest(min_score=50), "nothing configured: don't silently consume"
+
+
 def test_archive_alone_counts_as_delivery(
     monkeypatch: pytest.MonkeyPatch, tmp_path: object
 ) -> None:

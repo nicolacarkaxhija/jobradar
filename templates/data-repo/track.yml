@@ -43,8 +43,14 @@ jobs:
       - name: Install engine
         run: pip install "jobradar @ git+https://github.com/nicolacarkaxhija/jobradar@main"
 
+      # Free-text inputs go through env, never into the script source: listing URLs
+      # come from public boards and LLM extraction, so `${{ }}` interpolation here
+      # would be a command-injection sink. `status` is a choice, validated by GitHub.
       - name: Track
-        run: jobradar track "${{ inputs.listing }}" "${{ inputs.status }}" --note "${{ inputs.note }}" --config config.yaml
+        env:
+          LISTING: ${{ inputs.listing }}
+          NOTE: ${{ inputs.note }}
+        run: jobradar track "$LISTING" "${{ inputs.status }}" --note "$NOTE" --config config.yaml
 
       - name: Commit
         run: |

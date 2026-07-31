@@ -18,7 +18,8 @@ class EmailDigest:
 
     def __init__(self, cfg: EmailDeliveryConfig) -> None:
         self._host = os.environ.get("SMTP_HOST", "")
-        self._port = int(os.environ.get("SMTP_PORT", "465"))
+        # an unset Actions secret arrives as "" — int("") would crash the whole run
+        self._port = int(os.environ.get("SMTP_PORT") or 465)
         self._user = os.environ.get("SMTP_USER", "")
         self._password = os.environ.get("SMTP_PASSWORD", "")
         self._to = os.environ.get("DIGEST_EMAIL_TO", "") or self._user

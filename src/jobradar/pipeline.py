@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from pathlib import Path
@@ -96,13 +97,16 @@ def run(
                     "%s: ran within the last %d days, skipping", source.name, source.every_days
                 )
                 continue
+            # an attempt consumes the quota even if it fails part-way: the gate caps
+            # spend and API calls, and a half-failed fetch has already made them.
+            # Recording up-front also survives a hard kill (workflow timeout).
+            store.record_run(source.name)
             try:
                 listings = source.fetch()
             except Exception as exc:  # one broken source must not kill the run
                 logger.error("%s: fetch failed: %s", source.name, exc)
                 stats.source_errors[source.name] = str(exc)
                 continue
-            store.record_run(source.name)
             logger.info("%s: %d listings", source.name, len(listings))
             stats.fetched += len(listings)
             for listing in listings:
@@ -126,23 +130,37 @@ def _deliver_digest(
     stats: RunStats,
     dry_run: bool,
 ) -> None:
-    delivered = False
-    failed = False
+    def send_archive(todo: list[StoredListing]) -> bool:
+        archive.write(todo)
+        return True
+
+    channels: list[tuple[str, Callable[[list[StoredListing]], bool]]] = []
     if telegram.enabled:
-        ok = telegram.digest(items)
-        delivered |= ok
-        failed |= not ok
+        channels.append(("telegram", telegram.digest))
     if email.enabled:
-        ok = email.digest(items)
-        delivered |= ok
-        failed |= not ok
+        channels.append(("email", email.digest))
     if archive.enabled and not dry_run:
-        archive.write(items)
-        # the passive archive only counts as delivery when no push channel is configured
-        delivered = delivered or not (telegram.enabled or email.enabled)
-    # only consume the queue when every enabled channel actually delivered;
-    # a failed channel leaves items pending so the next digest retries them
-    if delivered and not failed:
+        channels.append(("archive", send_archive))
+    if not channels:
+        logger.error("digest has no enabled delivery channel — %d item(s) held", len(items))
+        return
+
+    any_delivered = False
+    all_delivered = True
+    for name, send in channels:
+        # per-channel bookkeeping: a retry after a partial failure must not
+        # re-send to a channel that already delivered (nor re-append the archive)
+        todo = store.undelivered(items, name)
+        if not todo:
+            any_delivered = True
+            continue
+        if send(todo):
+            store.mark_delivered([item.id for item in todo], name)
+            any_delivered = True
+        else:
+            all_delivered = False
+
+    if any_delivered and all_delivered:
         store.mark_digested([item.id for item in items])
         stats.digested = len(items)
     else:

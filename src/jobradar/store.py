@@ -7,7 +7,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 from types import TracebackType
 
-from jobradar.models import AppStatus, Listing, ListingStatus, Verdict
+from jobradar.models import AppStatus, Extracted, Listing, ListingStatus, Verdict
+
+_MAX_STORED_DESCRIPTION = 12_000  # bounds DB growth; enough for a draft to work from
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS listings (
@@ -30,10 +32,16 @@ CREATE TABLE IF NOT EXISTS listings (
     draft_path  TEXT,
     app_status  TEXT,
     app_note    TEXT,
-    app_updated TEXT
+    app_updated TEXT,
+    description TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_listings_status ON listings(status);
 CREATE INDEX IF NOT EXISTS idx_listings_first_seen ON listings(first_seen);
+CREATE TABLE IF NOT EXISTS digest_delivery (
+    listing_id TEXT NOT NULL,
+    channel    TEXT NOT NULL,
+    PRIMARY KEY (listing_id, channel)
+);
 CREATE TABLE IF NOT EXISTS source_runs (
     day     TEXT NOT NULL,
     source  TEXT NOT NULL,
@@ -96,7 +104,7 @@ class Store:
     def _migrate(self) -> None:
         # CREATE TABLE IF NOT EXISTS never alters an existing table — patch older DBs here.
         columns = {row[1] for row in self._conn.execute("PRAGMA table_info(listings)")}
-        for column in ("draft_path", "app_status", "app_note", "app_updated"):
+        for column in ("draft_path", "app_status", "app_note", "app_updated", "description"):
             if column not in columns:
                 self._conn.execute(f"ALTER TABLE listings ADD COLUMN {column} TEXT")
         self._conn.commit()
@@ -149,8 +157,8 @@ class Store:
         self._conn.execute(
             "INSERT OR IGNORE INTO listings "
             "(id, source, title, company, location, url, dedupe_key, posted_at, first_seen,"
-            " score, tier, category, reason, extracted, status, dup_of, draft_path) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " score, tier, category, reason, extracted, status, dup_of, draft_path, description) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 listing.id,
                 listing.source,
@@ -169,7 +177,52 @@ class Store:
                 status,
                 dup_of,
                 draft_path,
+                # kept so drafts can be generated later without refetching the posting
+                listing.description[:_MAX_STORED_DESCRIPTION],
             ),
+        )
+        self._conn.commit()
+
+    def find(self, term: str) -> tuple[Listing, Verdict | None] | None:
+        """Look a stored listing back up by URL or id prefix, verdict included."""
+        row = self._conn.execute(
+            "SELECT source, title, company, location, url, description, posted_at,"
+            " score, tier, category, reason, extracted "
+            "FROM listings WHERE url = ?",
+            (term,),
+        ).fetchone()
+        if row is None and len(term) >= 8:
+            row = self._conn.execute(
+                "SELECT source, title, company, location, url, description, posted_at,"
+                " score, tier, category, reason, extracted "
+                "FROM listings WHERE id LIKE ?",
+                (f"{term}%",),
+            ).fetchone()
+        if row is None:
+            return None
+        listing = Listing(
+            source=row[0],
+            title=row[1],
+            company=row[2],
+            location=row[3],
+            url=row[4],
+            description=row[5] or "",
+            posted_at=row[6] or "",
+        )
+        verdict: Verdict | None = None
+        if row[7] is not None and row[11]:
+            verdict = Verdict(
+                score=row[7],
+                tier=row[8],
+                category=row[9],
+                reason=row[10] or "",
+                extracted=Extracted.model_validate_json(row[11]),
+            )
+        return listing, verdict
+
+    def set_draft_path(self, listing_id: str, draft_path: str) -> None:
+        self._conn.execute(
+            "UPDATE listings SET draft_path = ? WHERE id = ?", (draft_path, listing_id)
         )
         self._conn.commit()
 
@@ -182,6 +235,24 @@ class Store:
             (min_score,),
         ).fetchall()
         return [StoredListing(*row) for row in rows]
+
+    def undelivered(self, items: list[StoredListing], channel: str) -> list[StoredListing]:
+        """Items this channel has not received yet — so a retry after a partial
+        failure doesn't re-send to channels that already delivered."""
+        done = {
+            row[0]
+            for row in self._conn.execute(
+                "SELECT listing_id FROM digest_delivery WHERE channel = ?", (channel,)
+            )
+        }
+        return [item for item in items if item.id not in done]
+
+    def mark_delivered(self, ids: list[str], channel: str) -> None:
+        self._conn.executemany(
+            "INSERT OR IGNORE INTO digest_delivery (listing_id, channel) VALUES (?, ?)",
+            [(listing_id, channel) for listing_id in ids],
+        )
+        self._conn.commit()
 
     def mark_digested(self, ids: list[str]) -> None:
         self._conn.executemany(
