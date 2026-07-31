@@ -101,3 +101,11 @@ def test_source_run_quota() -> None:
         store.record_run("remotive")
         assert store.runs_today("remotive") == 2
         assert store.runs_today("adzuna") == 0
+
+
+def test_last_run_day() -> None:
+    with Store(":memory:") as store:
+        assert store.last_run_day("llm_sweep") is None
+        store.record_run("llm_sweep")
+        last = store.last_run_day("llm_sweep")
+        assert last is not None and len(last) == 10  # YYYY-MM-DD

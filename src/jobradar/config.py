@@ -102,6 +102,16 @@ class JSearchConfig(StrictModel):
     max_runs_per_day: int | None = 1
 
 
+class LlmSweepConfig(StrictModel):
+    """Weekly coverage backstop: an LLM with server-side web search hunts listings
+    the aggregator APIs miss (employer career pages, niche boards)."""
+
+    enabled: bool = False
+    model: str = "claude-opus-5"  # must support the web_search_20260209 server tool
+    every_days: int = 7
+    max_searches: int = 8
+
+
 class SourcesConfig(StrictModel):
     arbeitnow: ArbeitnowConfig = ArbeitnowConfig()
     remotive: RemotiveConfig = RemotiveConfig()
@@ -111,6 +121,7 @@ class SourcesConfig(StrictModel):
     jobspy_indeed: JobspyIndeedConfig = JobspyIndeedConfig()
     email_alerts: EmailAlertsConfig = EmailAlertsConfig()
     jsearch: JSearchConfig = JSearchConfig()
+    llm_sweep: LlmSweepConfig = LlmSweepConfig()
 
 
 class StorageConfig(StrictModel):
