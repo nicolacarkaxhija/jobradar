@@ -59,6 +59,18 @@ jobradar run --config templates/data-repo/config.yaml --dry-run --source arbeitn
 
 Add `ANTHROPIC_API_KEY` to score, `--score-limit 5` to cap spend while testing.
 
+Before trusting the rubric, check it against the built-in calibration suite — twelve
+listings (a real SFCC role, a CRM mislabel, consultancy keyword soup, a tier-2
+composable role, relocation with and without stated comp, a prompt-injection attempt…)
+each with the score band it must land in:
+
+```bash
+jobradar calibrate --config config.yaml
+```
+
+It prints score, category and reasoning per case and exits non-zero if anything lands
+out of band — a few cents per run, and a regression test for every future rubric edit.
+
 ## Design notes
 
 - **Strictly typed.** mypy `--strict`, Pydantic models with `extra="forbid"` end to end — a typo'd config key or an unexpected API field fails loudly at load time, not silently at 4 a.m. in CI.
